@@ -18,7 +18,7 @@ jobs:
 
     - name: Install PaddleOCR and Tools
       run: |
-        pip install paddlepaddle paddlelite paddleocr
+        pip install paddlepaddle paddleocr paddlelite
 
     - name: Download and Process All 10 Languages
       run: |
@@ -26,14 +26,11 @@ jobs:
         from paddleocr import PaddleOCR
         import os, shutil
         
-        # প্রধান ১০টি ভাষার লিস্ট (কোড সহ)
         languages = ['en', 'bg', 'hi', 'ar', 'ur', 'ch', 'fa', 'fr', 'es', 'ru']
         
-        # ডিটেকশন মডেলটি ডাউনলোড করা হচ্ছে
         print('Downloading Detection Model...')
         PaddleOCR(use_angle_cls=True, lang='en')
         
-        # লুপ চালিয়ে সবগুলো রিকগনিশন মডেল অফিশিয়াল সোর্স থেকে ডাউনলোড
         for lang in languages:
             print(f'Downloading Recognition Model for: {lang}')
             try:
@@ -41,10 +38,8 @@ jobs:
             except Exception as e:
                 print(f'Error downloading {lang}: {e}')
         
-        # কম্পাইলারের পাথের সুবিধার জন্য সব ফাইল একসাথে গোছানো
         os.makedirs('./models_to_compile', exist_ok=True)
         
-        # ১. ডিটেকশন মডেল ফোল্ডার তৈরি ও রিনেম
         det_src = os.path.expanduser('~/.paddleocr/whl/det/ch/ch_PP-OCRv4_mobile_det_infer')
         det_dst = './models_to_compile/ocr_det_mobile'
         if os.path.exists(det_src):
@@ -52,12 +47,10 @@ jobs:
             os.rename(os.path.join(det_dst, 'inference.pdmodel'), os.path.join(det_dst, 'model.pdmodel'))
             os.rename(os.path.join(det_dst, 'inference.pdiparams'), os.path.join(det_dst, 'model.pdiparams'))
 
-        # ২. রিকগনিশন মডেলগুলো অটোমেটিক খুঁজে বের করে কপি ও রিনেম করা
         rec_base_path = os.path.expanduser('~/.paddleocr/whl/rec')
         for root, dirs, files in os.walk(rec_base_path):
             if 'inference.pdmodel' in files:
                 folder_name = os.path.basename(root)
-                # ইনফারেন্স ফোল্ডারের নাম ছোট করে আউটপুট ফোল্ডার তৈরি (যেমন: en_PP-OCRv4_mobile_rec)
                 clean_name = folder_name.replace('_infer', '')
                 dest_folder = os.path.join('./models_to_compile', clean_name)
                 
@@ -69,18 +62,30 @@ jobs:
     - name: Compile All 10 Languages to Mobile Format (.nb)
       run: |
         mkdir -p final_output_models
+        python -c "
+        import os
+        from paddlelite.lite import Opt
         
-        # models_to_compile ফোল্ডারের ভেতরের সব মডেলকে লুপ চালিয়ে সাকসেসফুলি কম্পাইল করা
-        for dir in ./models_to_compile/*/; do
-            if [ -d "$dir" ]; then
-                folder_name=$(basename "$dir")
-                echo "Compiling: $folder_name"
-                paddle_lite_opt --model_dir="$dir" --valid_targets=arm --optimize_out="./final_output_models/$folder_name" || true
-            fi
-        done
+        opt = Opt()
+        model_dir = './models_to_compile'
+        output_dir = './final_output_models'
+        
+        if os.path.exists(model_dir):
+            for folder in os.listdir(model_dir):
+                full_path = os.path.join(model_dir, folder)
+                if os.path.isdir(full_path):
+                    print(f'Compiling: {folder}')
+                    try:
+                        opt.set_model_dir(full_path)
+                        opt.set_valid_places('arm')
+                        opt.set_optimize_out(os.path.join(output_dir, folder))
+                        opt.run()
+                    except Exception as e:
+                        print(f'Failed to compile {folder}: {e}')
+        "
 
     - name: Upload All 10 Languages Mobile Models
       uses: actions/upload-artifact@v4
       with:
         name: paddleocr-v4-top10-languages-models
-        path: final_output_models/
+        path: final_output_models
