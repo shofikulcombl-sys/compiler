@@ -20,15 +20,17 @@ jobs:
       run: |
         pip install paddlepaddle paddlelite paddleocr
 
-    - name: Download PP-OCRv4 Mobile Models via Python
+    - name: Download PP-OCRv4 Mobile Models via Python Default Downloader
       run: |
         python -c "
         from paddleocr import PaddleOCR
-        # এটি রান করলে অফিসিয়াল ভেরিফাইড সোর্স থেকে অটোমেটিক মোবাইল মডেল দুটি ডাউনলোড হবে
-        ocr = PaddleOCR(use_angle_cls=True, lang='en', det_model_dir='PP-OCRv4_mobile_det', rec_model_dir='PP-OCRv4_mobile_rec')
+        # ডিফল্টভাবে রান করালে এটি নিজেই v4 মোবাইল মডেলগুলো ব্যাকগ্রাউন্ডে ডাউনলোড করে নেবে
+        ocr = PaddleOCR(use_angle_cls=True, lang='en')
         "
-        # ডাউনলোড হওয়া ফাইলগুলো খুঁজে বের করে নির্দিষ্ট ফোল্ডারে নিয়ে আসা
+        # ডাউনলোড হওয়া ফাইলগুলো খুঁজে বের করে আমাদের প্রজেক্ট ফোল্ডারে কপি করা
         mkdir -p ch_PP-OCRv4_mobile_det_infer en_PP-OCRv4_mobile_rec_infer
+        
+        # ডিফল্ট ডাউনলোড পাথ থেকে ফাইলগুলো কপি করা
         cp ~/.paddleocr/whl/det/ch/ch_PP-OCRv4_mobile_det_infer/* ./ch_PP-OCRv4_mobile_det_infer/ || true
         cp ~/.paddleocr/whl/rec/en/en_PP-OCRv4_mobile_rec_infer/* ./en_PP-OCRv4_mobile_rec_infer/ || true
 
