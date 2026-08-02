@@ -1,4 +1,3 @@
-
 name: Compile PaddleOCR v4 to Mobile Format
 
 on:
@@ -21,12 +20,17 @@ jobs:
       run: |
         pip install paddlelite
 
-    - name: Download Official PP-OCRv4 Mobile Models
+    - name: Download PP-OCRv4 Mobile Models from HuggingFace
       run: |
-        wget https://paddleocr.bj.bcebos.com/PP-OCRv4/mobile/en_PP-OCRv4_mobile_rec_infer.tar
-        wget https://paddleocr.bj.bcebos.com/PP-OCRv4/mobile/ch_PP-OCRv4_mobile_det_infer.tar
-        tar -xf en_PP-OCRv4_mobile_rec_infer.tar
-        tar -xf ch_PP-OCRv4_mobile_det_infer.tar
+        # ডিটেকশন মডেলের ফাইল ডাউনলোড এবং ফোল্ডার তৈরি
+        mkdir -p ch_PP-OCRv4_mobile_det_infer
+        wget -O ch_PP-OCRv4_mobile_det_infer/inference.pdmodel https://huggingface.co/PaddlePaddle/PP-OCRv4_mobile_det/resolve/main/inference.pdmodel
+        wget -O ch_PP-OCRv4_mobile_det_infer/inference.pdiparams https://huggingface.co/PaddlePaddle/PP-OCRv4_mobile_det/resolve/main/inference.pdiparams
+
+        # রিকগনিশন মডেলের ফাইল ডাউনলোড এবং ফোল্ডার তৈরি
+        mkdir -p en_PP-OCRv4_mobile_rec_infer
+        wget -O en_PP-OCRv4_mobile_rec_infer/inference.pdmodel https://huggingface.co/PaddlePaddle/en_PP-OCRv4_mobile_rec/resolve/main/inference.pdmodel
+        wget -O en_PP-OCRv4_mobile_rec_infer/inference.pdiparams https://huggingface.co/PaddlePaddle/en_PP-OCRv4_mobile_rec/resolve/main/inference.pdiparams
 
     - name: Compile to Mobile Format (.nb)
       run: |
