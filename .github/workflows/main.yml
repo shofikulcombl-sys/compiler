@@ -1,4 +1,4 @@
-name: Compile ALL PaddleOCR v4 Mobile Models
+name: Compile TOP 10 Languages PaddleOCR v4 Mobile Models
 
 on:
   workflow_dispatch:
@@ -20,63 +20,67 @@ jobs:
       run: |
         pip install paddlepaddle paddlelite paddleocr
 
-    - name: Download and Prepare Verified Languages
+    - name: Download and Process All 10 Languages
       run: |
         python -c "
         from paddleocr import PaddleOCR
-        # শুধুমাত্র অফিশিয়ালি ভেরিফাইড ৪টি ভাষা যা ১০০% কাজ করবে
-        languages = ['en', 'bg', 'hi', 'ar']
+        import os, shutil
         
-        # ডিটেকশন মডেল
-        ocr_det = PaddleOCR(use_angle_cls=True, lang='en')
+        # প্রধান ১০টি ভাষার লিস্ট (কোড সহ)
+        languages = ['en', 'bg', 'hi', 'ar', 'ur', 'ch', 'fa', 'fr', 'es', 'ru']
         
-        # লুপ চালিয়ে রিকগনিশন মডেল ডাউনলোড
+        # ডিটেকশন মডেলটি ডাউনলোড করা হচ্ছে
+        print('Downloading Detection Model...')
+        PaddleOCR(use_angle_cls=True, lang='en')
+        
+        # লুপ চালিয়ে সবগুলো রিকগনিশন মডেল অফিশিয়াল সোর্স থেকে ডাউনলোড
         for lang in languages:
-            print(f'Downloading model for: {lang}')
+            print(f'Downloading Recognition Model for: {lang}')
             try:
                 PaddleOCR(use_angle_cls=True, lang=lang)
             except Exception as e:
-                print(f'Skipping {lang} due to error: {e}')
-        "
+                print(f'Error downloading {lang}: {e}')
         
-        # কম্পাইল করার জন্য মূল ফোল্ডার তৈরি
-        mkdir -p models_to_compile/ch_PP-OCRv4_mobile_det_infer
+        # কম্পাইলারের পাথের সুবিধার জন্য সব ফাইল একসাথে গোছানো
+        os.makedirs('./models_to_compile', exist_ok=True)
         
-        # ১. ডিটেকশন মডেল কপি ও নাম পরিবর্তন
-        cp ~/.paddleocr/whl/det/ch/ch_PP-OCRv4_mobile_det_infer/* ./models_to_compile/ch_PP-OCRv4_mobile_det_infer/ || true
-        mv ./models_to_compile/ch_PP-OCRv4_mobile_det_infer/inference.pdmodel ./models_to_compile/ch_PP-OCRv4_mobile_det_infer/model.pdmodel || true
-        mv ./models_to_compile/ch_PP-OCRv4_mobile_det_infer/inference.pdiparams ./models_to_compile/ch_PP-OCRv4_mobile_det_infer/model.pdiparams || true
+        # ১. ডিটেকশন মডেল ফোল্ডার তৈরি ও রিনেম
+        det_src = os.path.expanduser('~/.paddleocr/whl/det/ch/ch_PP-OCRv4_mobile_det_infer')
+        det_dst = './models_to_compile/ocr_det_mobile'
+        if os.path.exists(det_src):
+            shutil.copytree(det_src, det_dst)
+            os.rename(os.path.join(det_dst, 'inference.pdmodel'), os.path.join(det_dst, 'model.pdmodel'))
+            os.rename(os.path.join(det_dst, 'inference.pdiparams'), os.path.join(det_dst, 'model.pdiparams'))
 
-        # ২. সব রিকগনিশন মডেল খুঁজে বের করে অটোমেটিক কপি ও নাম পরিবর্তন
-        python -c "
-        import os, shutil
-        base_path = os.path.expanduser('~/.paddleocr/whl/rec')
-        dest_base = './models_to_compile'
-        
-        for root, dirs, files in os.walk(base_path):
+        # ২. রিকগনিশন মডেলগুলো অটোমেটিক খুঁজে বের করে কপি ও রিনেম করা
+        rec_base_path = os.path.expanduser('~/.paddleocr/whl/rec')
+        for root, dirs, files in os.walk(rec_base_path):
             if 'inference.pdmodel' in files:
                 folder_name = os.path.basename(root)
-                dest_folder = os.path.join(dest_base, folder_name)
+                # ইনফারেন্স ফোল্ডারের নাম ছোট করে আউটপুট ফোল্ডার তৈরি (যেমন: en_PP-OCRv4_mobile_rec)
+                clean_name = folder_name.replace('_infer', '')
+                dest_folder = os.path.join('./models_to_compile', clean_name)
+                
                 os.makedirs(dest_folder, exist_ok=True)
                 shutil.copy(os.path.join(root, 'inference.pdmodel'), os.path.join(dest_folder, 'model.pdmodel'))
                 shutil.copy(os.path.join(root, 'inference.pdiparams'), os.path.join(dest_folder, 'model.pdiparams'))
         "
 
-    - name: Compile All Models to Mobile Format (.nb)
+    - name: Compile All 10 Languages to Mobile Format (.nb)
       run: |
-        mkdir -p final_mobile_models
+        mkdir -p final_output_models
         
-        # লুপ চালিয়ে সব ফোল্ডারের মডেল কম্পাইল করা
+        # models_to_compile ফোল্ডারের ভেতরের সব মডেলকে লুপ চালিয়ে সাকসেসফুলি কম্পাইল করা
         for dir in ./models_to_compile/*/; do
             if [ -d "$dir" ]; then
                 folder_name=$(basename "$dir")
-                output_name=${folder_name%_infer}
-                paddle_lite_opt --model_dir="$dir" --valid_targets=arm --optimize_out="./final_mobile_models/$output_name" || true
+                echo "Compiling: $folder_name"
+                paddle_lite_opt --model_dir="$dir" --valid_targets=arm --optimize_out="./final_output_models/$folder_name" || true
             fi
         done
 
-    - name: Upload All Mobile Output Files
+    - name: Upload All 10 Languages Mobile Models
       uses: actions/upload-artifact@v4
       with:
-        name: paddleocr-v4-all-languages-mobile-models
-        path: final_mobile_models/
+        name: paddleocr-v4-top10-languages-models
+        path: final_output_models/
