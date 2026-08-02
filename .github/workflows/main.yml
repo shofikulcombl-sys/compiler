@@ -16,21 +16,21 @@ jobs:
       with:
         python-version: '3.10'
 
-    - name: Install PaddleLite Compiler
+    - name: Install PaddleOCR and Tools
       run: |
-        pip install paddlelite
+        pip install paddlepaddle paddlelite paddleocr
 
-    - name: Download PP-OCRv4 Mobile Models from HuggingFace
+    - name: Download PP-OCRv4 Mobile Models via Python
       run: |
-        # ডিটেকশন মডেলের ফাইল ডাউনলোড এবং ফোল্ডার তৈরি
-        mkdir -p ch_PP-OCRv4_mobile_det_infer
-        wget -O ch_PP-OCRv4_mobile_det_infer/inference.pdmodel https://huggingface.co/PaddlePaddle/PP-OCRv4_mobile_det/resolve/main/inference.pdmodel
-        wget -O ch_PP-OCRv4_mobile_det_infer/inference.pdiparams https://huggingface.co/PaddlePaddle/PP-OCRv4_mobile_det/resolve/main/inference.pdiparams
-
-        # রিকগনিশন মডেলের ফাইল ডাউনলোড এবং ফোল্ডার তৈরি
-        mkdir -p en_PP-OCRv4_mobile_rec_infer
-        wget -O en_PP-OCRv4_mobile_rec_infer/inference.pdmodel https://huggingface.co/PaddlePaddle/en_PP-OCRv4_mobile_rec/resolve/main/inference.pdmodel
-        wget -O en_PP-OCRv4_mobile_rec_infer/inference.pdiparams https://huggingface.co/PaddlePaddle/en_PP-OCRv4_mobile_rec/resolve/main/inference.pdiparams
+        python -c "
+        from paddleocr import PaddleOCR
+        # এটি রান করলে অফিসিয়াল ভেরিফাইড সোর্স থেকে অটোমেটিক মোবাইল মডেল দুটি ডাউনলোড হবে
+        ocr = PaddleOCR(use_angle_cls=True, lang='en', det_model_dir='PP-OCRv4_mobile_det', rec_model_dir='PP-OCRv4_mobile_rec')
+        "
+        # ডাউনলোড হওয়া ফাইলগুলো খুঁজে বের করে নির্দিষ্ট ফোল্ডারে নিয়ে আসা
+        mkdir -p ch_PP-OCRv4_mobile_det_infer en_PP-OCRv4_mobile_rec_infer
+        cp ~/.paddleocr/whl/det/ch/ch_PP-OCRv4_mobile_det_infer/* ./ch_PP-OCRv4_mobile_det_infer/ || true
+        cp ~/.paddleocr/whl/rec/en/en_PP-OCRv4_mobile_rec_infer/* ./en_PP-OCRv4_mobile_rec_infer/ || true
 
     - name: Compile to Mobile Format (.nb)
       run: |
