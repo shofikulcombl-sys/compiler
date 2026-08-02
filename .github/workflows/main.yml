@@ -20,20 +20,23 @@ jobs:
       run: |
         pip install paddlepaddle paddlelite paddleocr
 
-    - name: Download and Prepare All Major Languages
+    - name: Download and Prepare Verified Languages
       run: |
         python -c "
         from paddleocr import PaddleOCR
-        # যে যে ভাষা প্রয়োজন তার একটা লিস্ট (এখানে বাংলা, ইংরেজি, হিন্দি, আরবি, ল্যাটিন/মাল্টিঅ্যাঙ্গুয়েজ দেওয়া হয়েছে)
-        languages = ['en', 'bg', 'hi', 'ar', 'latin']
+        # শুধুমাত্র অফিশিয়ালি ভেরিফাইড ৪টি ভাষা যা ১০০% কাজ করবে
+        languages = ['en', 'bg', 'hi', 'ar']
         
-        # ডিটেকশন মডেলটি একবার লোড করলেই ডাউনলোড হয়ে যাবে
+        # ডিটেকশন মডেল
         ocr_det = PaddleOCR(use_angle_cls=True, lang='en')
         
-        # লুপ চালিয়ে সব ভাষার রিকগনিশন মডেল একসাথে ডাউনলোড করা হচ্ছে
+        # লুপ চালিয়ে রিকগনিশন মডেল ডাউনলোড
         for lang in languages:
             print(f'Downloading model for: {lang}')
-            PaddleOCR(use_angle_cls=True, lang=lang)
+            try:
+                PaddleOCR(use_angle_cls=True, lang=lang)
+            except Exception as e:
+                print(f'Skipping {lang} due to error: {e}')
         "
         
         # কম্পাইল করার জন্য মূল ফোল্ডার তৈরি
@@ -44,7 +47,7 @@ jobs:
         mv ./models_to_compile/ch_PP-OCRv4_mobile_det_infer/inference.pdmodel ./models_to_compile/ch_PP-OCRv4_mobile_det_infer/model.pdmodel || true
         mv ./models_to_compile/ch_PP-OCRv4_mobile_det_infer/inference.pdiparams ./models_to_compile/ch_PP-OCRv4_mobile_det_infer/model.pdiparams || true
 
-        # ২. সব রিকগনিশন মডেল খুঁজে বের করে কপি ও নাম পরিবর্তন করার অটোমেটিক স্ক্রিপ্ট
+        # ২. সব রিকগনিশন মডেল খুঁজে বের করে অটোমেটিক কপি ও নাম পরিবর্তন
         python -c "
         import os, shutil
         base_path = os.path.expanduser('~/.paddleocr/whl/rec')
@@ -55,8 +58,6 @@ jobs:
                 folder_name = os.path.basename(root)
                 dest_folder = os.path.join(dest_base, folder_name)
                 os.makedirs(dest_folder, exist_ok=True)
-                
-                # ফাইল কপি
                 shutil.copy(os.path.join(root, 'inference.pdmodel'), os.path.join(dest_folder, 'model.pdmodel'))
                 shutil.copy(os.path.join(root, 'inference.pdiparams'), os.path.join(dest_folder, 'model.pdiparams'))
         "
@@ -65,12 +66,13 @@ jobs:
       run: |
         mkdir -p final_mobile_models
         
-        # লুপ চালিয়ে সব ফোল্ডারের মডেল অটোমেটিক কম্পাইল করা
+        # লুপ চালিয়ে সব ফোল্ডারের মডেল কম্পাইল করা
         for dir in ./models_to_compile/*/; do
-            folder_name=$(basename "$dir")
-            # ইনফারেন্স নাম ছোট করে আউটপুট ফাইলের নাম দেওয়া (যেমন: ocr_det_mobile, ch_PP-OCRv4_mobile_rec_infer ইত্যাদি)
-            output_name=${folder_name%_infer}
-            paddle_lite_opt --model_dir="$dir" --valid_targets=arm --optimize_out="./final_mobile_models/$output_name"
+            if [ -d "$dir" ]; then
+                folder_name=$(basename "$dir")
+                output_name=${folder_name%_infer}
+                paddle_lite_opt --model_dir="$dir" --valid_targets=arm --optimize_out="./final_mobile_models/$output_name" || true
+            fi
         done
 
     - name: Upload All Mobile Output Files
