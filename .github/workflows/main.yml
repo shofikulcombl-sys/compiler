@@ -1,1 +1,42 @@
 
+name: Compile PaddleOCR v4 to Mobile Format
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install PaddleLite Compiler
+      run: |
+        pip install paddlelite
+
+    - name: Download Official PP-OCRv4 Mobile Models
+      run: |
+        wget https://paddleocr.bj.bcebos.com/PP-OCRv4/mobile/en_PP-OCRv4_mobile_rec_infer.tar
+        wget https://paddleocr.bj.bcebos.com/PP-OCRv4/mobile/ch_PP-OCRv4_mobile_det_infer.tar
+        tar -xf en_PP-OCRv4_mobile_rec_infer.tar
+        tar -xf ch_PP-OCRv4_mobile_det_infer.tar
+
+    - name: Compile to Mobile Format (.nb)
+      run: |
+        paddle_lite_opt --model_dir=./ch_PP-OCRv4_mobile_det_infer --valid_targets=arm --optimize_out=ocr_det_mobile
+        paddle_lite_opt --model_dir=./en_PP-OCRv4_mobile_rec_infer --valid_targets=arm --optimize_out=ocr_rec_mobile
+
+    - name: Upload Mobile Output Files
+      uses: actions/upload-artifact@v4
+      with:
+        name: paddleocr-v4-mobile-models
+        path: |
+          ocr_det_mobile.nb
+          ocr_rec_mobile.nb
