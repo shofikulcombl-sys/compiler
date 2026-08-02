@@ -1,4 +1,4 @@
-name: Compile PaddleOCR v4 to Mobile Format
+name: Compile ALL PaddleOCR v4 Mobile Models
 
 on:
   workflow_dispatch:
@@ -20,29 +20,61 @@ jobs:
       run: |
         pip install paddlepaddle paddlelite paddleocr
 
-    - name: Download PP-OCRv4 Mobile Models via Python Default Downloader
+    - name: Download and Prepare All Major Languages
       run: |
         python -c "
         from paddleocr import PaddleOCR
-        # ডিফল্টভাবে রান করালে এটি নিজেই v4 মোবাইল মডেলগুলো ব্যাকগ্রাউন্ডে ডাউনলোড করে নেবে
-        ocr = PaddleOCR(use_angle_cls=True, lang='en')
-        "
-        # ডাউনলোড হওয়া ফাইলগুলো খুঁজে বের করে আমাদের প্রজেক্ট ফোল্ডারে কপি করা
-        mkdir -p ch_PP-OCRv4_mobile_det_infer en_PP-OCRv4_mobile_rec_infer
+        # যে যে ভাষা প্রয়োজন তার একটা লিস্ট (এখানে বাংলা, ইংরেজি, হিন্দি, আরবি, ল্যাটিন/মাল্টিঅ্যাঙ্গুয়েজ দেওয়া হয়েছে)
+        languages = ['en', 'bg', 'hi', 'ar', 'latin']
         
-        # ডিফল্ট ডাউনলোড পাথ থেকে ফাইলগুলো কপি করা
-        cp ~/.paddleocr/whl/det/ch/ch_PP-OCRv4_mobile_det_infer/* ./ch_PP-OCRv4_mobile_det_infer/ || true
-        cp ~/.paddleocr/whl/rec/en/en_PP-OCRv4_mobile_rec_infer/* ./en_PP-OCRv4_mobile_rec_infer/ || true
+        # ডিটেকশন মডেলটি একবার লোড করলেই ডাউনলোড হয়ে যাবে
+        ocr_det = PaddleOCR(use_angle_cls=True, lang='en')
+        
+        # লুপ চালিয়ে সব ভাষার রিকগনিশন মডেল একসাথে ডাউনলোড করা হচ্ছে
+        for lang in languages:
+            print(f'Downloading model for: {lang}')
+            PaddleOCR(use_angle_cls=True, lang=lang)
+        "
+        
+        # কম্পাইল করার জন্য মূল ফোল্ডার তৈরি
+        mkdir -p models_to_compile/ch_PP-OCRv4_mobile_det_infer
+        
+        # ১. ডিটেকশন মডেল কপি ও নাম পরিবর্তন
+        cp ~/.paddleocr/whl/det/ch/ch_PP-OCRv4_mobile_det_infer/* ./models_to_compile/ch_PP-OCRv4_mobile_det_infer/ || true
+        mv ./models_to_compile/ch_PP-OCRv4_mobile_det_infer/inference.pdmodel ./models_to_compile/ch_PP-OCRv4_mobile_det_infer/model.pdmodel || true
+        mv ./models_to_compile/ch_PP-OCRv4_mobile_det_infer/inference.pdiparams ./models_to_compile/ch_PP-OCRv4_mobile_det_infer/model.pdiparams || true
 
-    - name: Compile to Mobile Format (.nb)
+        # ২. সব রিকগনিশন মডেল খুঁজে বের করে কপি ও নাম পরিবর্তন করার অটোমেটিক স্ক্রিপ্ট
+        python -c "
+        import os, shutil
+        base_path = os.path.expanduser('~/.paddleocr/whl/rec')
+        dest_base = './models_to_compile'
+        
+        for root, dirs, files in os.walk(base_path):
+            if 'inference.pdmodel' in files:
+                folder_name = os.path.basename(root)
+                dest_folder = os.path.join(dest_base, folder_name)
+                os.makedirs(dest_folder, exist_ok=True)
+                
+                # ফাইল কপি
+                shutil.copy(os.path.join(root, 'inference.pdmodel'), os.path.join(dest_folder, 'model.pdmodel'))
+                shutil.copy(os.path.join(root, 'inference.pdiparams'), os.path.join(dest_folder, 'model.pdiparams'))
+        "
+
+    - name: Compile All Models to Mobile Format (.nb)
       run: |
-        paddle_lite_opt --model_dir=./ch_PP-OCRv4_mobile_det_infer --valid_targets=arm --optimize_out=ocr_det_mobile
-        paddle_lite_opt --model_dir=./en_PP-OCRv4_mobile_rec_infer --valid_targets=arm --optimize_out=ocr_rec_mobile
+        mkdir -p final_mobile_models
+        
+        # লুপ চালিয়ে সব ফোল্ডারের মডেল অটোমেটিক কম্পাইল করা
+        for dir in ./models_to_compile/*/; do
+            folder_name=$(basename "$dir")
+            # ইনফারেন্স নাম ছোট করে আউটপুট ফাইলের নাম দেওয়া (যেমন: ocr_det_mobile, ch_PP-OCRv4_mobile_rec_infer ইত্যাদি)
+            output_name=${folder_name%_infer}
+            paddle_lite_opt --model_dir="$dir" --valid_targets=arm --optimize_out="./final_mobile_models/$output_name"
+        done
 
-    - name: Upload Mobile Output Files
+    - name: Upload All Mobile Output Files
       uses: actions/upload-artifact@v4
       with:
-        name: paddleocr-v4-mobile-models
-        path: |
-          ocr_det_mobile.nb
-          ocr_rec_mobile.nb
+        name: paddleocr-v4-all-languages-mobile-models
+        path: final_mobile_models/
