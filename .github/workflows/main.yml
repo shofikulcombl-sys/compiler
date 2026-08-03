@@ -20,7 +20,7 @@ jobs:
       run: |
         pip install paddlepaddle paddleocr paddlelite
 
-    - name: Download and Process All 10 Languages
+    - name: Download and Process All 10 Languages (Fixed Paths)
       run: |
         python -c "
         from paddleocr import PaddleOCR
@@ -40,30 +40,40 @@ jobs:
 
         os.makedirs('./models_to_compile', exist_ok=True)
 
-        # Detection Model কপি করা
-        det_src = os.path.expanduser('~/.paddleocr/whl/det/ch/ch_PP-OCRv4_mobile_det_infer')
-        det_dst = './models_to_compile/ocr_det_mobile'
-        if os.path.exists(det_src):
-            shutil.rmtree(det_dst, ignore_errors=True) # আগের কপি থাকলে ডিলিট করে দেবে
-            shutil.copytree(det_src, det_dst)
+        # নতুন এবং পুরাতন উভয় পাথেই মডেল খুঁজে বের করা হবে
+        possible_base_paths = [
+            os.path.expanduser('~/.paddlex/official_models'),
+            os.path.expanduser('~/.paddleocr/whl')
+        ]
 
-        # Recognition Models কপি করা
-        rec_base_path = os.path.expanduser('~/.paddleocr/whl/rec')
-        for root, dirs, files in os.walk(rec_base_path):
-            if 'inference.pdmodel' in files:
-                folder_name = os.path.basename(root)
-                clean_name = folder_name.replace('_infer', '')
-                dest_folder = os.path.join('./models_to_compile', clean_name)
+        copied_count = 0
+        for base_path in possible_base_paths:
+            if not os.path.exists(base_path):
+                continue
+            print(f'Searching for models in: {base_path}')
+            
+            for root, dirs, files in os.walk(base_path):
+                if 'inference.pdmodel' in files and 'inference.pdiparams' in files:
+                    folder_name = os.path.basename(root)
+                    # ফোল্ডারের নাম থেকে '_infer' সরিয়ে পরিষ্কার নাম তৈরি করা
+                    clean_name = folder_name.replace('_infer', '').replace('_infer', '')
+                    dest_folder = os.path.join('./models_to_compile', clean_name)
 
-                os.makedirs(dest_folder, exist_ok=True)
-                print(f'Copying recognition model from {root} to {dest_folder}')
-                shutil.copy(os.path.join(root, 'inference.pdmodel'), os.path.join(dest_folder, 'inference.pdmodel'))
-                shutil.copy(os.path.join(root, 'inference.pdiparams'), os.path.join(dest_folder, 'inference.pdiparams'))
+                    os.makedirs(dest_folder, exist_ok=True)
+                    print(f'Copying model from {root} to {dest_folder}')
+                    
+                    shutil.copy(os.path.join(root, 'inference.pdmodel'), os.path.join(dest_folder, 'inference.pdmodel'))
+                    shutil.copy(os.path.join(root, 'inference.pdiparams'), os.path.join(dest_folder, 'inference.pdiparams'))
+                    copied_count += 1
+
+        print(f'Total models copied: {copied_count}')
+        if copied_count == 0:
+            print('ERROR: No models found! Please check PaddleOCR download paths.')
         "
 
-    - name: Debug - Check files after download
+    - name: Debug - Check models_to_compile folder
       run: |
-        echo "Checking models_to_compile folder:"
+        echo "Models to compile:"
         ls -R models_to_compile || echo "Folder is empty!"
 
     - name: Compile All 10 Languages to Mobile Format (.nb)
@@ -88,21 +98,18 @@ jobs:
                     param_file = os.path.join(full_path, 'inference.pdiparams')
 
                     if not os.path.exists(model_file):
-                        # যদি আগের রেনেম করা ফাইল থাকে সেটা চেক করা হবে
-                        model_file = os.path.join(full_path, 'model')
-                        param_file = os.path.join(full_path, 'params')
-
-                    if not os.path.exists(model_file):
-                        print(f'  ERROR: No model file found in {full_path}')
+                        print(f'  ERROR: No inference.pdmodel found in {full_path}')
                         print(f'  Files in dir: {os.listdir(full_path)}')
                         continue
 
-                    print(f'  Using model file: {model_file}')
                     try:
                         opt = Opt()
                         opt.set_model_file(model_file)
                         opt.set_param_file(param_file)
-                        opt.set_valid_places(['arm'])
+                        
+                        # ARM ও X86 উভয় প্লেস ব্যবহার করা হচ্ছে যাতে Ubuntu সার্ভারে কম্পাইল হয়
+                        opt.set_valid_places(['arm', 'arm64', 'x86'])
+                        
                         opt.set_optimize_out(os.path.join(output_dir, folder))
                         opt.run()
                         print(f'  Successfully compiled {folder}')
@@ -113,7 +120,7 @@ jobs:
             print('ERROR: models_to_compile directory does not exist!')
         "
 
-    - name: Debug - Check final outputs
+    - name: Debug - Check final output files
       run: |
         echo "Final output files:"
         ls -R final_output_models || echo "No files generated!"
