@@ -25,38 +25,42 @@ jobs:
         python -c "
         from paddleocr import PaddleOCR
         import os, shutil
-        
+
         languages = ['en', 'bg', 'hi', 'ar', 'ur', 'ch', 'fa', 'fr', 'es', 'ru']
-        
+
         print('Downloading Detection Model...')
         PaddleOCR(use_angle_cls=True, lang='en')
-        
+
         for lang in languages:
             print(f'Downloading Recognition Model for: {lang}')
             try:
                 PaddleOCR(use_angle_cls=True, lang=lang)
             except Exception as e:
                 print(f'Error downloading {lang}: {e}')
-        
+
         os.makedirs('./models_to_compile', exist_ok=True)
-        
+
+        # Detection Model
         det_src = os.path.expanduser('~/.paddleocr/whl/det/ch/ch_PP-OCRv4_mobile_det_infer')
         det_dst = './models_to_compile/ocr_det_mobile'
         if os.path.exists(det_src):
             shutil.copytree(det_src, det_dst)
-            os.rename(os.path.join(det_dst, 'inference.pdmodel'), os.path.join(det_dst, 'model.pdmodel'))
-            os.rename(os.path.join(det_dst, 'inference.pdiparams'), os.path.join(det_dst, 'model.pdiparams'))
+            # এখানে এক্সটেনশন সরিয়ে ফেলুন (model এবং params)
+            os.rename(os.path.join(det_dst, 'inference.pdmodel'), os.path.join(det_dst, 'model'))
+            os.rename(os.path.join(det_dst, 'inference.pdiparams'), os.path.join(det_dst, 'params'))
 
+        # Recognition Models
         rec_base_path = os.path.expanduser('~/.paddleocr/whl/rec')
         for root, dirs, files in os.walk(rec_base_path):
             if 'inference.pdmodel' in files:
                 folder_name = os.path.basename(root)
                 clean_name = folder_name.replace('_infer', '')
                 dest_folder = os.path.join('./models_to_compile', clean_name)
-                
+
                 os.makedirs(dest_folder, exist_ok=True)
-                shutil.copy(os.path.join(root, 'inference.pdmodel'), os.path.join(dest_folder, 'model.pdmodel'))
-                shutil.copy(os.path.join(root, 'inference.pdiparams'), os.path.join(dest_folder, 'model.pdiparams'))
+                # এক্সটেনশন ছাড়া কপি করুন
+                shutil.copy(os.path.join(root, 'inference.pdmodel'), os.path.join(dest_folder, 'model'))
+                shutil.copy(os.path.join(root, 'inference.pdiparams'), os.path.join(dest_folder, 'params'))
         "
 
     - name: Compile All 10 Languages to Mobile Format (.nb)
@@ -65,11 +69,11 @@ jobs:
         python -c "
         import os
         from paddlelite.lite import Opt
-        
+
         opt = Opt()
         model_dir = './models_to_compile'
         output_dir = './final_output_models'
-        
+
         if os.path.exists(model_dir):
             for folder in os.listdir(model_dir):
                 full_path = os.path.join(model_dir, folder)
@@ -77,12 +81,15 @@ jobs:
                     print(f'Compiling: {folder}')
                     try:
                         opt.set_model_dir(full_path)
-                        opt.set_valid_places('arm')
+                        opt.set_valid_places(['arm'])  # লিস্ট আকারে দিন
                         opt.set_optimize_out(os.path.join(output_dir, folder))
                         opt.run()
                     except Exception as e:
                         print(f'Failed to compile {folder}: {e}')
         "
+
+    - name: Check generated files (Debug)
+      run: ls -R final_output_models
 
     - name: Upload All 10 Languages Mobile Models
       uses: actions/upload-artifact@v4
