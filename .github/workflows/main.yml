@@ -40,16 +40,14 @@ jobs:
 
         os.makedirs('./models_to_compile', exist_ok=True)
 
-        # Detection Model
+        # Detection Model কপি করা
         det_src = os.path.expanduser('~/.paddleocr/whl/det/ch/ch_PP-OCRv4_mobile_det_infer')
         det_dst = './models_to_compile/ocr_det_mobile'
         if os.path.exists(det_src):
+            shutil.rmtree(det_dst, ignore_errors=True) # আগের কপি থাকলে ডিলিট করে দেবে
             shutil.copytree(det_src, det_dst)
-            # এখানে এক্সটেনশন সরিয়ে ফেলুন (model এবং params)
-            os.rename(os.path.join(det_dst, 'inference.pdmodel'), os.path.join(det_dst, 'model'))
-            os.rename(os.path.join(det_dst, 'inference.pdiparams'), os.path.join(det_dst, 'params'))
 
-        # Recognition Models
+        # Recognition Models কপি করা
         rec_base_path = os.path.expanduser('~/.paddleocr/whl/rec')
         for root, dirs, files in os.walk(rec_base_path):
             if 'inference.pdmodel' in files:
@@ -58,10 +56,15 @@ jobs:
                 dest_folder = os.path.join('./models_to_compile', clean_name)
 
                 os.makedirs(dest_folder, exist_ok=True)
-                # এক্সটেনশন ছাড়া কপি করুন
-                shutil.copy(os.path.join(root, 'inference.pdmodel'), os.path.join(dest_folder, 'model'))
-                shutil.copy(os.path.join(root, 'inference.pdiparams'), os.path.join(dest_folder, 'params'))
+                print(f'Copying recognition model from {root} to {dest_folder}')
+                shutil.copy(os.path.join(root, 'inference.pdmodel'), os.path.join(dest_folder, 'inference.pdmodel'))
+                shutil.copy(os.path.join(root, 'inference.pdiparams'), os.path.join(dest_folder, 'inference.pdiparams'))
         "
+
+    - name: Debug - Check files after download
+      run: |
+        echo "Checking models_to_compile folder:"
+        ls -R models_to_compile || echo "Folder is empty!"
 
     - name: Compile All 10 Languages to Mobile Format (.nb)
       run: |
@@ -69,27 +72,51 @@ jobs:
         python -c "
         import os
         from paddlelite.lite import Opt
+        import traceback
 
-        opt = Opt()
         model_dir = './models_to_compile'
         output_dir = './final_output_models'
 
         if os.path.exists(model_dir):
-            for folder in os.listdir(model_dir):
+            folders = os.listdir(model_dir)
+            print(f'Found folders to compile: {folders}')
+            for folder in folders:
                 full_path = os.path.join(model_dir, folder)
                 if os.path.isdir(full_path):
                     print(f'Compiling: {folder}')
+                    model_file = os.path.join(full_path, 'inference.pdmodel')
+                    param_file = os.path.join(full_path, 'inference.pdiparams')
+
+                    if not os.path.exists(model_file):
+                        # যদি আগের রেনেম করা ফাইল থাকে সেটা চেক করা হবে
+                        model_file = os.path.join(full_path, 'model')
+                        param_file = os.path.join(full_path, 'params')
+
+                    if not os.path.exists(model_file):
+                        print(f'  ERROR: No model file found in {full_path}')
+                        print(f'  Files in dir: {os.listdir(full_path)}')
+                        continue
+
+                    print(f'  Using model file: {model_file}')
                     try:
-                        opt.set_model_dir(full_path)
-                        opt.set_valid_places(['arm'])  # লিস্ট আকারে দিন
+                        opt = Opt()
+                        opt.set_model_file(model_file)
+                        opt.set_param_file(param_file)
+                        opt.set_valid_places(['arm'])
                         opt.set_optimize_out(os.path.join(output_dir, folder))
                         opt.run()
+                        print(f'  Successfully compiled {folder}')
                     except Exception as e:
-                        print(f'Failed to compile {folder}: {e}')
+                        print(f'  Failed to compile {folder}: {e}')
+                        traceback.print_exc()
+        else:
+            print('ERROR: models_to_compile directory does not exist!')
         "
 
-    - name: Check generated files (Debug)
-      run: ls -R final_output_models
+    - name: Debug - Check final outputs
+      run: |
+        echo "Final output files:"
+        ls -R final_output_models || echo "No files generated!"
 
     - name: Upload All 10 Languages Mobile Models
       uses: actions/upload-artifact@v4
