@@ -1,4 +1,4 @@
-name: Compile TOP 10 Languages PaddleOCR v4 Mobile Models
+name: Compile PaddleOCR v4 Mobile Models (Lightweight)
 
 on:
   workflow_dispatch:
@@ -20,76 +20,68 @@ jobs:
       run: |
         pip install paddlepaddle paddleocr paddlelite
 
-    - name: Download and Process All 10 Languages (Fixed Paths)
+    - name: Download ONLY Mobile Models (Lightweight)
       run: |
         python -c "
         from paddleocr import PaddleOCR
-        import os, shutil
-
-        languages = ['en', 'bg', 'hi', 'ar', 'ur', 'ch', 'fa', 'fr', 'es', 'ru']
-
-        print('Downloading Detection Model...')
-        PaddleOCR(use_angle_cls=True, lang='en')
-
-        for lang in languages:
-            print(f'Downloading Recognition Model for: {lang}')
-            try:
-                PaddleOCR(use_angle_cls=True, lang=lang)
-            except Exception as e:
-                print(f'Error downloading {lang}: {e}')
+        import os, shutil, urllib.request, zipfile
+        
+        # মোবাইল মডেলের সরাসরি ডাউনলোড লিংক (v4 Mobile)
+        MODELS = {
+            'det_mobile': 'https://paddleocr.bj.bcebos.com/PP-OCRv4/ch/ch_PP-OCRv4_mobile_det_infer.tar',
+            'en_rec_mobile': 'https://paddleocr.bj.bcebos.com/PP-OCRv4/english/en_PP-OCRv4_mobile_rec_infer.tar',
+            'ch_rec_mobile': 'https://paddleocr.bj.bcebos.com/PP-OCRv4/chinese/ch_PP-OCRv4_mobile_rec_infer.tar',
+            # অন্যান্য ভাষার মোবাইল রিকগনিশন মডেল (আপনার লিস্ট অনুযায়ী)
+            'bg_rec_mobile': 'https://paddleocr.bj.bcebos.com/PP-OCRv4/multilingual/bulgarian_PP-OCRv4_mobile_rec_infer.tar',
+            'hi_rec_mobile': 'https://paddleocr.bj.bcebos.com/PP-OCRv4/multilingual/hindi_PP-OCRv4_mobile_rec_infer.tar',
+            'ar_rec_mobile': 'https://paddleocr.bj.bcebos.com/PP-OCRv4/multilingual/arabic_PP-OCRv4_mobile_rec_infer.tar',
+            'ur_rec_mobile': 'https://paddleocr.bj.bcebos.com/PP-OCRv4/multilingual/urdu_PP-OCRv4_mobile_rec_infer.tar',
+            'fa_rec_mobile': 'https://paddleocr.bj.bcebos.com/PP-OCRv4/multilingual/persian_PP-OCRv4_mobile_rec_infer.tar',
+            'fr_rec_mobile': 'https://paddleocr.bj.bcebos.com/PP-OCRv4/multilingual/french_PP-OCRv4_mobile_rec_infer.tar',
+            'es_rec_mobile': 'https://paddleocr.bj.bcebos.com/PP-OCRv4/multilingual/spanish_PP-OCRv4_mobile_rec_infer.tar',
+            'ru_rec_mobile': 'https://paddleocr.bj.bcebos.com/PP-OCRv4/multilingual/russian_PP-OCRv4_mobile_rec_infer.tar',
+        }
 
         os.makedirs('./models_to_compile', exist_ok=True)
-
-        # নতুন এবং পুরাতন উভয় পাথেই মডেল খুঁজে বের করা হবে
-        possible_base_paths = [
-            os.path.expanduser('~/.paddlex/official_models'),
-            os.path.expanduser('~/.paddleocr/whl')
-        ]
-
-        copied_count = 0
-        for base_path in possible_base_paths:
-            if not os.path.exists(base_path):
-                continue
-            print(f'Searching for models in: {base_path}')
+        
+        for name, url in MODELS.items():
+            print(f'Downloading: {name} from {url}')
+            tar_path = f'{name}.tar'
+            urllib.request.urlretrieve(url, tar_path)
             
-            for root, dirs, files in os.walk(base_path):
-                if 'inference.pdmodel' in files and 'inference.pdiparams' in files:
-                    folder_name = os.path.basename(root)
-                    # ফোল্ডারের নাম থেকে '_infer' সরিয়ে পরিষ্কার নাম তৈরি করা
-                    clean_name = folder_name.replace('_infer', '').replace('_infer', '')
-                    dest_folder = os.path.join('./models_to_compile', clean_name)
-
-                    os.makedirs(dest_folder, exist_ok=True)
-                    print(f'Copying model from {root} to {dest_folder}')
-                    
-                    shutil.copy(os.path.join(root, 'inference.pdmodel'), os.path.join(dest_folder, 'inference.pdmodel'))
-                    shutil.copy(os.path.join(root, 'inference.pdiparams'), os.path.join(dest_folder, 'inference.pdiparams'))
-                    copied_count += 1
-
-        print(f'Total models copied: {copied_count}')
-        if copied_count == 0:
-            print('ERROR: No models found! Please check PaddleOCR download paths.')
+            # আনজিপ করা
+            import tarfile
+            with tarfile.open(tar_path, 'r') as tar:
+                tar.extractall('./models_to_compile')
+            
+            # ফোল্ডারের নাম পরিবর্তন করে পরিষ্কার করা
+            extracted_folder = tar.getmembers()[0].name
+            src = os.path.join('./models_to_compile', extracted_folder)
+            dst = os.path.join('./models_to_compile', name)
+            if os.path.exists(dst):
+                shutil.rmtree(dst)
+            os.rename(src, dst)
+            
+            # ফাইলের নাম 'inference.pdmodel' ঠিক রাখা (আগের কম্পাইলার যেন কাজ করে)
+            os.rename(os.path.join(dst, 'inference.pdmodel'), os.path.join(dst, 'inference.pdmodel')) # নাম একই থাকে
+            os.rename(os.path.join(dst, 'inference.pdiparams'), os.path.join(dst, 'inference.pdiparams'))
+            
+            os.remove(tar_path)
+            print(f'Successfully downloaded and extracted {name}')
         "
 
-    - name: Debug - Check models_to_compile folder
-      run: |
-        echo "Models to compile:"
-        ls -R models_to_compile || echo "Folder is empty!"
-
-    - name: Compile All 10 Languages to Mobile Format (.nb)
+    - name: Compile All Mobile Models to .nb
       run: |
         mkdir -p final_output_models
         python -c "
         import os
         from paddlelite.lite import Opt
-        import traceback
 
         model_dir = './models_to_compile'
         output_dir = './final_output_models'
 
         if os.path.exists(model_dir):
             folders = os.listdir(model_dir)
-            print(f'Found folders to compile: {folders}')
             for folder in folders:
                 full_path = os.path.join(model_dir, folder)
                 if os.path.isdir(full_path):
@@ -97,36 +89,17 @@ jobs:
                     model_file = os.path.join(full_path, 'inference.pdmodel')
                     param_file = os.path.join(full_path, 'inference.pdiparams')
 
-                    if not os.path.exists(model_file):
-                        print(f'  ERROR: No inference.pdmodel found in {full_path}')
-                        print(f'  Files in dir: {os.listdir(full_path)}')
-                        continue
-
-                    try:
+                    if os.path.exists(model_file):
                         opt = Opt()
                         opt.set_model_file(model_file)
                         opt.set_param_file(param_file)
-                        
-                        # ARM ও X86 উভয় প্লেস ব্যবহার করা হচ্ছে যাতে Ubuntu সার্ভারে কম্পাইল হয়
                         opt.set_valid_places(['arm', 'arm64', 'x86'])
-                        
                         opt.set_optimize_out(os.path.join(output_dir, folder))
                         opt.run()
-                        print(f'  Successfully compiled {folder}')
-                    except Exception as e:
-                        print(f'  Failed to compile {folder}: {e}')
-                        traceback.print_exc()
-        else:
-            print('ERROR: models_to_compile directory does not exist!')
         "
 
-    - name: Debug - Check final output files
-      run: |
-        echo "Final output files:"
-        ls -R final_output_models || echo "No files generated!"
-
-    - name: Upload All 10 Languages Mobile Models
+    - name: Upload Mobile Models
       uses: actions/upload-artifact@v4
       with:
-        name: paddleocr-v4-top10-languages-models
+        name: paddleocr-v4-mobile-lightweight-models
         path: final_output_models
